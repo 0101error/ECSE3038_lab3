@@ -1,85 +1,70 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List, Optional
-import uuid
+from fastapi import FastAPI , Response,HTTPException
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel,Field, ValidationError
+from uuid import UUID, uuid4
 
 app = FastAPI()
 
-
 tanks = []
-tank_id_counter = 1 
 
-class Tank(BaseModel): 
+class Tank(BaseModel):
+    id: UUID = Field (default_factory= uuid4) 
     location: str
     lat: float
     long: float
-    id: Optional[str] = None
 
-class UpdateTank(BaseModel):
-    location: Optional[str] = None
-    lat: Optional[float] = None
-    long: Optional[float] = None
+class Tank_Update(BaseModel):
+    location: str| None = None
+    lat: float| None = None
+    long: float| None = None
 
+#Get Handler Request 
+@app.get("/tank")
+def get_exsisting_tanks():
+    return tanks
 
-@app.get("/tank", response_model=List[Tank])
-async def get_tanks():
-    return tanks  
-
-# GET /tank/{tank_id} - Get Single Tank by ID
-@app.get("/tank/{tank_id}", response_model=Tank)
-async def get_tank_by_id(tank_id: str):
+#Get Handler Request 
+@app.get("/tank/{id}")
+def get_specific_tanks(id: str):
     for tank in tanks:
-        if tank['id'] == tank_id:
-            return tank  
+        if "id" in tank and str(tank["id"]) == id:
+            return tank
+    raise HTTPException(status_code=404, detail="Tank Not Found")
+
+#Post Handler Request 
+@app.post("/tank")
+def create_new_tanks(tank:Tank):
+        
+        new_tank = {
+            "id": str(uuid4()),
+            "location": tank.location,
+            "lat": tank.lat,
+            "long": tank.long
+        }
+
+        tanks.append(new_tank)
+        return new_tank
+
+@app.patch("/tank/{id}")
+async def update_tank_alternative(id: UUID, tank_update: Tank_Update):
+   
+    for tank_index, tank in enumerate(tanks): 
+
+        if "id" in tank and UUID(str(tank["id"])) == id:
+            updated_fields = tank_update.dict(exclude_unset=True) 
+
+            for field, value in updated_fields.items():
+                tank[field] = value
+
+            return tanks[tank_index] 
     raise HTTPException(status_code=404, detail="Tank not found")
 
-
-# POST /tank - Create New Tank
-@app.post("/tank", response_model=Tank, status_code=201)
-async def create_tank(tank: Tank):  
-    global tank_id_counter  
-
-    tank_dict = tank.dict()  
-    tank_id = str(uuid.uuid4())  
-    tank_dict['id'] = tank_id  
-    tanks.append(tank_dict) 
-    return tank_dict 
-
-# PATCH /tank/{tank_id} - Update Tank Information (SIMPLIFIED VERSION for Beginners)
-@app.patch("/tank/{tank_id}")
-async def update_tank(tank_id: str, updates: dict): 
-    tank_to_update = None
-    tank_index = -1
-    for index, tank in enumerate(tanks):
-        if tank['id'] == tank_id:
-            tank_to_update = tank
-            tank_index = index
-            break
-
-    if not tank_to_update:
-        raise HTTPException(status_code=404, detail="Tank not found (Simplified Update)")
-
-   
-    if "location" in updates:
-        tank_to_update['location'] = updates['location']
-
-    return tank_to_update 
-
-
-# DELETE /tank/{tank_id} - Delete Tank
-@app.delete("/tank/{tank_id}", status_code=204)  
-async def delete_tank(tank_id: str):
-  
-    tank_to_delete = None
-    tank_index = -1
-    for index, tank in enumerate(tanks):
-        if tank['id'] == tank_id:
-            tank_to_delete = tank
-            tank_index = index
-            break
-
-    if not tank_to_delete:
-        raise HTTPException(status_code=404, detail="Tank not found")
-
-    tanks.pop(tank_index)  
-    return  
+#Delete Handler Request
+@app.delete("/tank/{id}")
+def delete_prson(id:UUID):
+    for tank in tanks:
+         if "id" in tank and UUID(str(tank["id"])) == id:
+            tanks.remove(tank)
+            return Response(status_code =204)
+    raise HTTPException(status_code=404, detail="Tank not found")
